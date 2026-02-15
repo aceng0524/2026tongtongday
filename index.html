@@ -1,186 +1,217 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>生日報紙拍貼機 - 修正版</title>
-<style>
-body {
-font-family: sans-serif;
-display: flex;
-flex-direction: column;
-align-items: center;
-background-color: #222;
-color: white;
-margin: 0;
-padding: 20px;
-}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生日報紙拍貼機</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #222;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
 
-/* 外框容器：保持原始比例，不壓縮 */
-.container {
-position: relative;
-width: fit-content;
-max-width: 95vw;
-max-height: 80vh;
-background: #000;
-overflow: hidden;
-box-shadow: 0 0 20px rgba(0,0,0,0.5);
-line-height: 0;
-}
+        .container {
+            position: relative;
+            width: fit-content;
+            max-width: 95vw;
+            max-height: 80vh;
+            background: #000;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            line-height: 0;
+        }
 
-/* 報紙框：使用 auto 確保不被壓縮 */
-#frame-overlay {
-display: block;
-width: auto;
-height: auto;
-max-width: 100%;
-max-height: 80vh;
-position: relative;
-z-index: 10;
-pointer-events: none;
-}
+        #frame-overlay {
+            display: block;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 80vh;
+            position: relative;
+            z-index: 10;
+            pointer-events: none;
+        }
 
-/* 攝影機畫面：絕對定位在框的下方 */
-#video {
-position: absolute;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-object-fit: cover; /* 讓相機填滿框格而不變形 */
-transform: scaleX(-1); /* 鏡像預覽 */
-z-index: 5;
-}
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 5;
+        }
 
-.controls {
-margin-top: 20px;
-display: flex;
-flex-direction: column;
-align-items: center;
-gap: 10px;
-}
+        /* 倒數計時文字樣式 */
+        #countdown {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 120px;
+            font-weight: bold;
+            color: #f1c40f;
+            text-shadow: 0 0 20px rgba(0,0,0,0.8);
+            z-index: 20;
+            display: none; /* 平時隱藏 */
+        }
 
-button {
-padding: 15px 40px;
-font-size: 18px;
-cursor: pointer;
-background-color: #f1c40f;
-color: #000;
-border: none;
-border-radius: 30px;
-font-weight: bold;
-}
+        /* 閃光燈效果 */
+        #flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 30;
+            display: none;
+        }
 
-#status-msg {
-font-size: 14px;
-color: #ff6b6b;
-}
-</style>
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: #f1c40f;
+            color: #000;
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+
+        #status-msg {
+            font-size: 14px;
+            color: #ff6b6b;
+        }
+    </style>
 </head>
 <body>
 
-<h2>📸 報紙拍貼機</h2>
+    <h2>📰 報紙風拍貼機</h2>
+    
+    <div class="container" id="booth">
+        <video id="video" autoplay playsinline></video>
+        <div id="countdown"></div>
+        <div id="flash"></div>
+        <img id="frame-overlay" src="frame.png" alt="載入中...">
+    </div>
 
-<div class="container" id="booth">
-<video id="video" autoplay playsinline></video>
-<img id="frame-overlay" src="frame.png" alt="載入中...">
-</div>
+    <div class="controls">
+        <div id="status-msg"></div>
+        <button id="snap-btn">準備拍照！</button>
+    </div>
 
-<div class="controls">
-<div id="status-msg"></div>
-<button id="snap-btn">拍照並儲存</button>
-</div>
+    <canvas id="canvas-hidden" style="display:none;"></canvas>
 
-<canvas id="canvas-hidden" style="display:none;"></canvas>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas-hidden');
+        const frameImg = document.getElementById('frame-overlay');
+        const snapBtn = document.getElementById('snap-btn');
+        const countdownEl = document.getElementById('countdown');
+        const flashEl = document.getElementById('flash');
+        const statusMsg = document.getElementById('status-msg');
 
-<script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas-hidden');
-const frameImg = document.getElementById('frame-overlay');
-const snapBtn = document.getElementById('snap-btn');
-const statusMsg = document.getElementById('status-msg');
+        async function init() {
+            if (window.location.protocol === 'file:') {
+                statusMsg.innerText = "❌ 請使用伺服器環境開啟 (如 GitHub Pages)";
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                statusMsg.innerText = "❌ 相機啟動失敗";
+            }
+        }
 
-// 1. 偵測環境並啟動相機
-async function init() {
-// 檢查是否為本地檔案開啟 (file://)
-if (window.location.protocol === 'file:') {
-statusMsg.innerText = "❌ 偵測到您直接打開 HTML 檔案。請使用 Live Server 或上傳到網頁空間，否則無法開啟相機。";
-return;
-}
+        // 倒數拍照邏輯
+        snapBtn.addEventListener('click', () => {
+            if (!video.srcObject) return;
 
-try {
-const stream = await navigator.mediaDevices.getUserMedia({
-video: {
-width: { ideal: 1920 },
-height: { ideal: 1080 },
-facingMode: "user"
-}
-});
-video.srcObject = stream;
-} catch (err) {
-statusMsg.innerText = "❌ 無法啟動相機。請檢查權限或確保網址是 HTTPS。";
-console.error(err);
-}
-}
+            snapBtn.disabled = true; // 倒數期間禁用按鈕
+            let count = 3;
+            countdownEl.style.display = 'block';
+            countdownEl.innerText = count;
 
-// 2. 拍照下載邏輯
-snapBtn.addEventListener('click', () => {
-if (!video.srcObject) {
-alert("相機尚未啟動！");
-return;
-}
+            const timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownEl.innerText = count;
+                } else {
+                    clearInterval(timer);
+                    countdownEl.style.display = 'none';
+                    takePhoto();
+                }
+            }, 1000);
+        });
 
-const ctx = canvas.getContext('2d');
+        function takePhoto() {
+            // 閃光燈動畫
+            flashEl.style.display = 'block';
+            setTimeout(() => { flashEl.style.display = 'none'; }, 100);
 
-// 以「框」的原始大小作為輸出解析度
-const w = frameImg.naturalWidth;
-const h = frameImg.naturalHeight;
-canvas.width = w;
-canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            const w = frameImg.naturalWidth;
+            const h = frameImg.naturalHeight;
+            canvas.width = w;
+            canvas.height = h;
 
-// 計算相機畫面填滿比例 (Cover 邏輯)
-const videoW = video.videoWidth;
-const videoH = video.videoHeight;
-const vRatio = videoW / videoH;
-const cRatio = w / h;
+            const videoW = video.videoWidth;
+            const videoH = video.videoHeight;
+            const vRatio = videoW / videoH;
+            const cRatio = w / h;
 
-let dW, dH, dx, dy;
-if (vRatio > cRatio) {
-dH = h;
-dW = h * vRatio;
-dx = (dW - w) / 2;
-dy = 0;
-} else {
-dW = w;
-dH = w / vRatio;
-dx = 0;
-dy = (dH - h) / 2;
-}
+            let dW, dH, dx, dy;
+            if (vRatio > cRatio) {
+                dH = h; dW = h * vRatio; dx = (dW - w) / 2; dy = 0;
+            } else {
+                dW = w; dH = w / vRatio; dx = 0; dy = (dH - h) / 2;
+            }
 
-// A. 畫相機畫面 (鏡像處理)
-ctx.save();
-ctx.translate(w, 0);
-ctx.scale(-1, 1);
-ctx.drawImage(video, -dx, -dy, dW, dH);
-ctx.restore();
+            ctx.save();
+            ctx.translate(w, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, -dx, -dy, dW, dH);
+            ctx.restore();
+            ctx.drawImage(frameImg, 0, 0, w, h);
 
-// B. 疊加報紙框
-ctx.drawImage(frameImg, 0, 0, w, h);
+            try {
+                const link = document.createElement('a');
+                link.download = `Birthday_Photo_${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png', 1.0);
+                link.click();
+            } catch (e) {
+                alert("存檔失敗");
+            }
+            
+            snapBtn.disabled = false; // 拍完恢復按鈕
+        }
 
-// C. 下載
-try {
-const link = document.createElement('a');
-link.download = `Birthday_Photo_${Date.now()}.png`;
-link.href = canvas.toDataURL('image/png', 1.0);
-link.click();
-} catch (e) {
-alert("存檔失敗：" + e.message);
-}
-});
-
-// 初始化
-frameImg.onload = init;
-if (frameImg.complete) init();
-</script>
+        frameImg.onload = init;
+        if (frameImg.complete) init();
+    </script>
 </body>
 </html>
